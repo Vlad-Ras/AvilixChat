@@ -2,6 +2,7 @@ package com.roften.multichat.chat.server;
 
 import com.roften.multichat.MultiChatConfig;
 import com.roften.multichat.MultiChatMod;
+import com.roften.multichat.admin.AdminChatState;
 import com.roften.multichat.chat.ChatChannel;
 import com.roften.multichat.db.ChatLogDatabase;
 import net.minecraft.ChatFormatting;
@@ -67,6 +68,18 @@ public final class DeathCompatHandler {
                 if (p.distanceToSqr(player) <= maxDistSqr) {
                     p.sendSystemMessage(out);
                 }
+            }
+
+            // Also send a copy into ADMIN tab for admins (independent of /spy toggle).
+            MutableComponent adminOut = Component.literal("[" + ts + "]").withStyle(ChatFormatting.DARK_GRAY)
+                    .append(Component.literal(" "))
+                    .append(ChatChannel.ADMIN.channelBadge())
+                    .append(Component.literal(" "))
+                    .append(deathMsg.copy());
+            Component marked = AdminChatState.markAdminMirror(adminOut);
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (!AdminChatState.hasAdminChatPermission(p)) continue;
+                p.sendSystemMessage(marked);
             }
         });
 

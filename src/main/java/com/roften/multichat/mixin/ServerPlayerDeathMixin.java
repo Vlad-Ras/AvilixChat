@@ -2,6 +2,7 @@ package com.roften.multichat.mixin;
 
 import com.roften.multichat.MultiChatConfig;
 import com.roften.multichat.MultiChatMod;
+import com.roften.multichat.admin.AdminChatState;
 import com.roften.multichat.chat.ChatChannel;
 import com.roften.multichat.chat.server.DeathMessageDeduper;
 import com.roften.multichat.db.ChatLogDatabase;
@@ -74,6 +75,19 @@ public abstract class ServerPlayerDeathMixin {
         ChatLogDatabase.runWithoutMixinSystemLogging(() -> {
             for (ServerPlayer p : targets) {
                 p.sendSystemMessage(out);
+            }
+
+            // Always deliver a copy into ADMIN tab (even if /spy is disabled).
+            MutableComponent adminOut = Component.literal("[" + ts + "]").withStyle(ChatFormatting.DARK_GRAY)
+                    .append(Component.literal(" "))
+                    .append(ChatChannel.ADMIN.channelBadge())
+                    .append(Component.literal(" "))
+                    .append(message.copy());
+
+            Component marked = AdminChatState.markAdminMirror(adminOut);
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (!AdminChatState.hasAdminChatPermission(p)) continue;
+                p.sendSystemMessage(marked);
             }
         });
 

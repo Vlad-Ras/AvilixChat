@@ -182,6 +182,18 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
+// --- Dev safety: avoid loading a stale built JAR from run/mods ---
+// If a previous export jar was copied into run/mods, NeoForge will see *two* copies of the mod
+// (classes + jar) and may pick the jar, causing "nothing changed" or even mixin crashes.
+// We delete any avilixchat-*.jar from run/mods before launching the dev client/server.
+tasks.matching { it.name == 'net.neoforged.devlaunch.Main.main' }.configureEach {
+    doFirst {
+        delete(fileTree('run/mods') {
+            include 'avilixchat-*.jar'
+        })
+    }
+}
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {

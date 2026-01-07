@@ -1,5 +1,9 @@
 package com.roften.multichat.spy;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.roften.multichat.db.ChatLogDatabase;
 import com.roften.multichat.moderation.Perms;
 import net.minecraft.ChatFormatting;
@@ -12,7 +16,13 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.neoforged.fml.loading.FMLPaths;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -34,6 +44,10 @@ public final class SpyState {
     public static final String NODE_SPY = "avilixchat.spy";
 
     private static final Set<UUID> ENABLED = ConcurrentHashMap.newKeySet();
+
+    // Persist enabled spies across server restarts.
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final String STORE_FILE = "avilixchat-spy-state.json";
 
     /**
      * Guards against recursion when we are sending spy messages.
@@ -60,6 +74,7 @@ public final class SpyState {
         // If permissions were removed while online, stop sending immediately.
         if (!hasSpyPermission(player)) {
             ENABLED.remove(id);
+            savePersisted();
             return false;
         }
         return true;
@@ -69,14 +84,17 @@ public final class SpyState {
         if (player == null) return false;
         if (!hasSpyPermission(player)) {
             ENABLED.remove(player.getUUID());
+            savePersisted();
             return false;
         }
         UUID id = player.getUUID();
         if (ENABLED.contains(id)) {
             ENABLED.remove(id);
+            savePersisted();
             return false;
         }
         ENABLED.add(id);
+        savePersisted();
         return true;
     }
 
@@ -84,10 +102,62 @@ public final class SpyState {
         if (player == null) return;
         if (!hasSpyPermission(player)) {
             ENABLED.remove(player.getUUID());
+            savePersisted();
             return;
         }
         if (on) ENABLED.add(player.getUUID());
         else ENABLED.remove(player.getUUID());
+        savePersisted();
+    }
+
+    /** Loads persisted enabled spy UUIDs from disk (server-side). */
+    public static void loadPersisted() {
+        ENABLED.clear();
+        Path p = persistedPath();
+        if (p == null || !Files.exists(p)) return;
+
+        try (BufferedReader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
+            JsonElement el = com.google.gson.JsonParser.parseReader(r);
+            if (!el.isJsonObject()) return;
+            JsonObject obj = el.getAsJsonObject();
+            if (!obj.has("enabled") || !obj.get("enabled").isJsonArray()) return;
+            for (JsonElement e : obj.getAsJsonArray("enabled")) {
+                if (!e.isJsonPrimitive()) continue;
+                String s = e.getAsString();
+                if (s == null || s.isBlank()) continue;
+                try {
+                    ENABLED.add(UUID.fromString(s.trim()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Saves current enabled spy UUIDs to disk (server-side). */
+    public static void savePersisted() {
+        Path p = persistedPath();
+        if (p == null) return;
+
+        try {
+            Files.createDirectories(p.getParent());
+        } catch (Throwable ignored) {
+        }
+
+        JsonObject obj = new JsonObject();
+        obj.add("enabled", GSON.toJsonTree(ENABLED.stream().map(UUID::toString).toList()));
+        try (BufferedWriter w = Files.newBufferedWriter(p, StandardCharsets.UTF_8)) {
+            GSON.toJson(obj, w);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Path persistedPath() {
+        try {
+            return FMLPaths.CONFIGDIR.get().resolve(STORE_FILE);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     public static boolean isSendingSpy() {
@@ -123,8 +193,10 @@ public final class SpyState {
     public static MutableComponent spyPrefix() {
         String ts = TS.format(Instant.now());
         return Component.literal("[" + ts + "] ")
-                .withStyle(ChatFormatting.DARK_GRAY)
-                .append(Component.literal("[SPY] ").withStyle(ChatFormatting.DARK_RED));
+                .withStyle(ChatFormatting.GRAY)
+                .append(Component.literal("[").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal("SPY").withStyle(ChatFormatting.DARK_RED))
+                .append(Component.literal("] ").withStyle(ChatFormatting.GRAY));
     }
 
     /**

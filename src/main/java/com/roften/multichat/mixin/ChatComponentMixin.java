@@ -13,6 +13,7 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Locale;
@@ -267,5 +268,32 @@ public abstract class ChatComponentMixin {
             if (hasClickAction(sib)) return true;
         }
         return false;
+    }
+
+    /**
+     * Убирает полупрозрачный «трек» скроллбара чата (оставляя сам ползунок), чтобы не было лишней полосы.
+     */
+    @ModifyArg(
+            method = "render",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/GuiGraphics;fill(IIIII)V"),
+            index = 4,
+            require = 0
+    )
+    private int multichat$stripScrollbarTrackColor(int color) {
+        int a = (color >>> 24) & 0xFF;
+        int rgb = color & 0xFFFFFF;
+        // В ваниле трек скроллбара рисуется полупрозрачным «светло‑серым/белым».
+        // Иногда оттенок не чисто белый, поэтому режем по признакам: низкая альфа + светлый серый.
+        if (a > 0 && a < 0xB0) {
+            int r = (rgb >>> 16) & 0xFF;
+            int g = (rgb >>> 8) & 0xFF;
+            int b = rgb & 0xFF;
+            boolean greyish = Math.abs(r - g) <= 12 && Math.abs(g - b) <= 12;
+            boolean bright = r >= 0x90 && g >= 0x90 && b >= 0x90;
+            if (greyish && bright) {
+                return 0;
+            }
+        }
+        return color;
     }
 }

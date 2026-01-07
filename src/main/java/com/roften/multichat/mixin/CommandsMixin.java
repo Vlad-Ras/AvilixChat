@@ -50,15 +50,16 @@ public abstract class CommandsMixin {
         }
 
         ServerPlayer exec = source.getPlayer();
+        // Spy copies must be monochrome: everything gray, only "SPY" stays red.
         Component who = exec != null
-                ? Component.literal(exec.getGameProfile().getName()).withStyle(ChatFormatting.YELLOW)
-                : Component.literal(source.getTextName()).withStyle(ChatFormatting.YELLOW);
+                ? Component.literal(exec.getGameProfile().getName()).withStyle(ChatFormatting.GRAY)
+                : Component.literal(source.getTextName()).withStyle(ChatFormatting.GRAY);
 
+        // Keep it short: no "Command:" prefix.
         Component msg = SpyState.spyPrefix()
-                .append(Component.literal("Command: ").withStyle(ChatFormatting.GRAY))
                 .append(who)
-                .append(Component.literal(" -> ").withStyle(ChatFormatting.DARK_GRAY))
-                .append(Component.literal("/" + raw).withStyle(ChatFormatting.WHITE));
+                .append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal("/" + raw).withStyle(ChatFormatting.GRAY));
 
         // Smart filtering is inside SpyState: it will avoid duplicates when the spy is also a recipient.
         // Additionally, we pass executor to avoid echoing back to the executor.

@@ -98,9 +98,13 @@ public abstract class ChatScreenMixin {
         Minecraft mc = Minecraft.getInstance();
         var font = mc.font;
 
+        ChatTab hoveredTab = null;
+
         for (ChatTab t : tabs) {
             boolean selected = (t.channel == ClientChatState.getCurrent());
             boolean hover = t.hit(mouseX, mouseY);
+
+            if (hover) hoveredTab = t;
 
             // Channel-colored tabs.
             int rgb = ClientUiConfig.tabRgb(t.channel) & 0xFFFFFF;
@@ -152,6 +156,11 @@ public abstract class ChatScreenMixin {
         if (input != null) {
             renderMentionSuggestions(self, gfx, input, mouseX, mouseY);
             renderCommandHelp(gfx, input);
+        }
+
+        // Tooltip with the full chat name when hovering a tab.
+        if (hoveredTab != null) {
+            gfx.renderTooltip(font, hoveredTab.channel.tabTitle(), mouseX, mouseY);
         }
 
     }
@@ -349,12 +358,23 @@ public abstract class ChatScreenMixin {
         if (st.selected >= st.candidates.size()) st.selected = st.candidates.size() - 1;
 
         // Render popup (vanilla-like simple list).
+        // Important: make sure the popup is NOT clipped by leftover scissors from widgets,
+        // and render it above the chat (higher Z) so it always stays "in front".
         Minecraft mc = Minecraft.getInstance();
         int rowH = 10;
         int w = Math.max(90, input.getWidth() / 2);
         int h = st.candidates.size() * rowH + 2;
         int x = input.getX();
         int y = input.getY() - h - 2;
+
+        // Ensure no scissor from previous widgets clips the popup.
+        try {
+            GuiGraphics.class.getMethod("disableScissor").invoke(gfx);
+        } catch (Throwable ignored) {
+        }
+
+        gfx.pose().pushPose();
+        gfx.pose().translate(0, 0, 500);
 
         gfx.fill(x, y, x + w, y + h, 0xCC000000);
         gfx.fill(x, y, x + w, y + 1, 0x55FFFFFF);
@@ -369,6 +389,8 @@ public abstract class ChatScreenMixin {
             String name = st.candidates.get(i);
             gfx.drawString(mc.font, Component.literal("@" + name).withStyle(sel ? ChatFormatting.WHITE : ChatFormatting.GRAY), x + 4, ry + 1, 0xFFFFFF, false);
         }
+
+        gfx.pose().popPose();
     }
 
     private static boolean handleMentionKeys(ChatScreen screen, int keyCode) {

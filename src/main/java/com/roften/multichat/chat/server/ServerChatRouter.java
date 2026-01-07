@@ -17,6 +17,7 @@ import com.roften.multichat.spy.AreaSpyState;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.TextColor;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -216,25 +217,33 @@ public final class ServerChatRouter {
     private static MutableComponent format(MinecraftServer server, ChatChannel channel, ServerPlayer sender, String messageText, boolean spyTag) {
         final String ts = LocalTime.now().format(TIME_FMT);
 
+        final TextColor spyGray = TextColor.fromLegacyFormat(ChatFormatting.GRAY);
+
         // Build with explicit single-space separators to avoid double-spacing with LP prefixes.
-        MutableComponent out = Component.literal("[" + ts + "]").withStyle(ChatFormatting.DARK_GRAY);
+        MutableComponent out = Component.literal("[" + ts + "]")
+                .withStyle(spyTag ? ChatFormatting.GRAY : ChatFormatting.DARK_GRAY);
         out = out.append(Component.literal(""));
-        out = out.append(channel.channelBadge());
+        out = out.append(spyTag ? forceColor(channel.channelBadge(), spyGray) : channel.channelBadge());
         out = out.append(Component.literal(""));
 
         if (spyTag) {
-            out = out.append(Component.literal("[SPY]").withStyle(ChatFormatting.DARK_RED));
-            out = out.append(Component.literal(" "));
+            // In SPY echo: everything is gray, only "SPY" is red.
+            out = out.append(Component.literal("[").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal("SPY").withStyle(ChatFormatting.DARK_RED))
+                    .append(Component.literal("] ").withStyle(ChatFormatting.GRAY));
         }
 
         Component lpPrefix = LuckPermsCompat.getPrefix(sender);
         if (!lpPrefix.getString().isEmpty()) {
-            out = out.append(lpPrefix);
+            out = out.append(spyTag ? forceColor(lpPrefix, spyGray) : lpPrefix);
             out = out.append(Component.literal(""));
         }
 
-        // Player name inherits the prefix color. If the prefix is a gradient, we apply a gradient across the name.
-        out = out.append(PrefixNameStyler.styleName(sender, lpPrefix));
+        // Player name color comes from LuckPerms meta (NOT from the prefix).
+        out = out.append(spyTag
+                ? Component.literal(sender.getGameProfile().getName()).withStyle(ChatFormatting.GRAY)
+                : PrefixNameStyler.styleName(sender));
+
         out = out.append(Component.literal(": ").withStyle(ChatFormatting.GRAY));
 
         // Parse player-provided formatting (legacy + MiniMessage subset) so hex colors work.
@@ -242,13 +251,35 @@ public final class ServerChatRouter {
                 ? MiniMessageComponentParser.parse(messageText)
                 : LegacyComponentParser.parse(messageText);
 
-        // If player text has no explicit color, apply per-channel default from config.
-        if (parsedMsg.getStyle().getColor() == null) {
-            int rgb = MultiChatConfig.getTextRgb(channel);
-            parsedMsg = parsedMsg.copy().withStyle(s -> s.withColor(net.minecraft.network.chat.TextColor.fromRgb(rgb)));
+        if (spyTag) {
+            // SPY echo must be monochrome.
+            parsedMsg = forceColor(parsedMsg, spyGray);
+        } else {
+            // If player text has no explicit color, apply per-channel default from config.
+            if (parsedMsg.getStyle().getColor() == null) {
+                int rgb = MultiChatConfig.getTextRgb(channel);
+                parsedMsg = parsedMsg.copy().withStyle(s -> s.withColor(net.minecraft.network.chat.TextColor.fromRgb(rgb)));
+            }
         }
 
         out = out.append(parsedMsg);
+        return out;
+    }
+
+    /**
+     * Forces the given component (and all its siblings) to the specified text color.
+     * Keeps click/hover events and other style bits intact.
+     */
+    private static MutableComponent forceColor(Component in, TextColor color) {
+        if (in == null) return Component.empty().copy();
+        MutableComponent out = in.copy().withStyle(s -> s.withColor(color));
+
+        // Re-color siblings recursively (parent styles do not override explicit child colors).
+        List<Component> sibs = new ArrayList<>(out.getSiblings());
+        out.getSiblings().clear();
+        for (Component sib : sibs) {
+            out.append(forceColor(sib, color));
+        }
         return out;
     }
 
